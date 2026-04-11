@@ -97,9 +97,15 @@ resource "github_repository_ruleset" "dev" {
 # HCP Terraform workspaces
 # ---------------------------------------------------------------------------
 
+data "tfe_project" "this" {
+  name         = var.tfe_project_name
+  organization = var.tfe_organization
+}
+
 resource "tfe_workspace" "dev" {
   name         = "${local.repo_name}-dev"
   organization = var.tfe_organization
+  project_id   = data.tfe_project.this.id
   auto_apply   = var.auto_apply
   tag_names    = local.workspace_tags
 
@@ -117,6 +123,7 @@ resource "tfe_workspace" "dev" {
 resource "tfe_workspace" "main" {
   name         = "${local.repo_name}-main"
   organization = var.tfe_organization
+  project_id   = data.tfe_project.this.id
   auto_apply   = var.auto_apply
   tag_names    = local.workspace_tags
 

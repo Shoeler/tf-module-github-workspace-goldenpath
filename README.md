@@ -130,6 +130,7 @@ Set these on the workspace as **Terraform Variables**.
 | Variable | Sensitive | Recommended location |
 |----------|-----------|----------------------|
 | `oauth_token_id` | **Yes** | Workspace variable or Variable Set |
+| `tfe_project_name` | No | Workspace variable or Variable Set |
 | `github_org` | No | Variable Set (same for all workspaces) |
 | `tfe_organization` | No | Variable Set (same for all workspaces) |
 | `team` | No | Workspace variable |
@@ -173,6 +174,7 @@ Workspace-level variables take precedence over Variable Set values if both defin
 | `repo_visibility` | Visibility of the GitHub repository. Must be `public` or `private`. | `string` | `"private"` | no |
 | `terraform_working_directory` | Path within the repository where Terraform configuration lives. | `string` | `"/"` | no |
 | `auto_apply` | Whether HCP Terraform workspaces auto-apply on successful plans. | `bool` | `false` | no |
+| `tfe_project_name` | HCP Terraform project name under which workspaces will be created. | `string` | `"Default Project"` | no |
 
 ### Naming constraints
 
