@@ -38,38 +38,57 @@ resource "github_branch" "dev" {
 }
 
 # ---------------------------------------------------------------------------
-# Branch protection – require pull requests before merging
+# Branch rulesets – require pull requests before merging (GitHub Free compatible)
 # ---------------------------------------------------------------------------
 
-resource "github_branch_protection" "main" {
-  repository_id = github_repository.this.node_id
-  pattern       = "main"
+resource "github_repository_ruleset" "main" {
+  repository  = github_repository.this.name
+  name        = "main-protection"
+  target      = "branch"
+  enforcement = "active"
 
-  required_pull_request_reviews {
-    required_approving_review_count = 1
-    dismiss_stale_reviews           = true
-    require_code_owner_reviews      = false
+  conditions {
+    ref_name {
+      include = ["refs/heads/main"]
+      exclude = []
+    }
   }
 
-  # Block direct pushes; all changes must come through a PR.
-  allows_deletions    = false
-  allows_force_pushes = false
+  rules {
+    deletion = true
+
+    pull_request {
+      required_approving_review_count = 1
+      dismiss_stale_reviews_on_push   = true
+      require_code_owner_review       = false
+    }
+  }
 
   depends_on = [github_repository.this]
 }
 
-resource "github_branch_protection" "dev" {
-  repository_id = github_repository.this.node_id
-  pattern       = "dev"
+resource "github_repository_ruleset" "dev" {
+  repository  = github_repository.this.name
+  name        = "dev-protection"
+  target      = "branch"
+  enforcement = "active"
 
-  required_pull_request_reviews {
-    required_approving_review_count = 1
-    dismiss_stale_reviews           = true
-    require_code_owner_reviews      = false
+  conditions {
+    ref_name {
+      include = ["refs/heads/dev"]
+      exclude = []
+    }
   }
 
-  allows_deletions    = false
-  allows_force_pushes = false
+  rules {
+    deletion = true
+
+    pull_request {
+      required_approving_review_count = 1
+      dismiss_stale_reviews_on_push   = true
+      require_code_owner_review       = false
+    }
+  }
 
   depends_on = [github_branch.dev]
 }
