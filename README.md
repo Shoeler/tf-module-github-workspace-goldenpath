@@ -174,7 +174,7 @@ Workspace-level variables take precedence over Variable Set values if both defin
 | `repo_visibility` | Visibility of the GitHub repository. Must be `public` or `private`. | `string` | `"private"` | no |
 | `terraform_working_directory` | Path within the repository where Terraform configuration lives. | `string` | `"/"` | no |
 | `auto_apply` | Whether HCP Terraform workspaces auto-apply on successful plans. | `bool` | `false` | no |
-| `tfe_project_name` | HCP Terraform project name under which workspaces will be created. | `string` | `"Default Project"` | no |
+| `tfe_project_name` | HCP Terraform project name under which workspaces will be created. | `string` | — | yes |
 
 ### Naming constraints
 

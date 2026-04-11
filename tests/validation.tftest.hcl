@@ -22,6 +22,7 @@ variables {
   github_org       = "acme-corp"
   tfe_organization = "acme-hcp"
   oauth_token_id   = "ot-mocktokenid000000"
+  tfe_project_name = "default-project"
 }
 
 run "valid_inputs_succeed" {

@@ -20,6 +20,7 @@ variables {
   github_org       = "acme-corp"
   tfe_organization = "acme-hcp"
   oauth_token_id   = "ot-mocktokenid000000"
+  tfe_project_name = "default-project"
 }
 
 # ---------------------------------------------------------------------------
@@ -305,6 +306,32 @@ run "workspace_tags_include_team_and_project" {
   assert {
     condition     = contains(tfe_workspace.main.tag_names, "project:payments-api")
     error_message = "main workspace tags must include 'project:{project}'."
+  }
+}
+
+# ---------------------------------------------------------------------------
+# HCP Terraform project
+# ---------------------------------------------------------------------------
+
+run "workspace_project_name_is_passed_to_data_source" {
+  command = plan
+
+  assert {
+    condition     = data.tfe_project.this.name == "default-project"
+    error_message = "tfe_project data source name must match var.tfe_project_name."
+  }
+}
+
+run "workspace_project_name_can_be_overridden" {
+  command = plan
+
+  variables {
+    tfe_project_name = "my-custom-project"
+  }
+
+  assert {
+    condition     = data.tfe_project.this.name == "my-custom-project"
+    error_message = "tfe_project data source name must reflect the overridden tfe_project_name."
   }
 }
 

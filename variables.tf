@@ -66,5 +66,4 @@ variable "auto_apply" {
 variable "tfe_project_name" {
   description = "HCP Terraform project name under which workspaces will be created."
   type        = string
-  default     = "Default Project"
 }
