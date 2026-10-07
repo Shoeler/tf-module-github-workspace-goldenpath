@@ -25,10 +25,10 @@ output "workspace_main_id" {
 
 output "workspace_dev_url" {
   description = "HCP Terraform UI URL for the dev workspace."
-  value       = "https://app.terraform.io/app/${var.tfe_organization}/workspaces/${tfe_workspace.dev.name}"
+  value       = tfe_workspace.dev.html_url
 }
 
 output "workspace_main_url" {
   description = "HCP Terraform UI URL for the main workspace."
-  value       = "https://app.terraform.io/app/${var.tfe_organization}/workspaces/${tfe_workspace.main.name}"
+  value       = tfe_workspace.main.html_url
 }

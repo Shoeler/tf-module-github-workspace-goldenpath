@@ -232,8 +232,8 @@ The test suite is split into two files:
 
 | File | Runs | Covers |
 |------|------|--------|
-| [`tests/unit.tftest.hcl`](tests/unit.tftest.hcl) | 20 | Resource configuration: naming, branch setup, protection rules, workspace VCS bindings, tags, `auto_apply`, `working_directory` |
-| [`tests/validation.tftest.hcl`](tests/validation.tftest.hcl) | 14 | Variable validation: rejects invalid `team`, `project`, and `repo_visibility` values |
+| [`tests/unit.tftest.hcl`](tests/unit.tftest.hcl) | 8 | Resource configuration: naming, branch setup, ruleset rules, workspace VCS bindings, project placement, tags, `auto_apply`, `working_directory`, output wiring |
+| [`tests/validation.tftest.hcl`](tests/validation.tftest.hcl) | 13 | Variable validation: rejects empty or invalid `team`, `project`, and `repo_visibility` values |
 
 ---
 
