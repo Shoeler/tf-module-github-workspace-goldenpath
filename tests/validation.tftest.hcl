@@ -8,13 +8,13 @@
 #   terraform test
 #
 # Requires Terraform >= 1.7 (mock_provider support).
+#
+# Each rejection needs its own run block because expect_failures applies to a
+# whole run.  Accepted-value runs are kept to one per variable; the unit suite
+# already exercises the defaults.
 
 mock_provider "github" {}
 mock_provider "tfe" {}
-
-# ---------------------------------------------------------------------------
-# Baseline – all valid inputs must produce a successful plan.
-# ---------------------------------------------------------------------------
 
 variables {
   team             = "platform"
@@ -25,14 +25,19 @@ variables {
   tfe_project_name = "default-project"
 }
 
-run "valid_inputs_succeed" {
-  command = plan
-  # No assertions needed; a successful plan is the assertion.
-}
-
 # ---------------------------------------------------------------------------
 # var.team validation
 # ---------------------------------------------------------------------------
+
+run "team_rejects_empty_string" {
+  command = plan
+
+  variables {
+    team = ""
+  }
+
+  expect_failures = [var.team]
+}
 
 run "team_rejects_uppercase_letters" {
   command = plan
@@ -64,31 +69,47 @@ run "team_rejects_underscores" {
   expect_failures = [var.team]
 }
 
-run "team_rejects_leading_hyphen" {
+run "team_accepts_hyphens_and_digits" {
+  command = plan
+
+  variables {
+    team = "platform-2"
+  }
+
+  assert {
+    condition     = github_repository.this.name == "platform-2-payments-api"
+    error_message = "A valid team containing hyphens and digits must flow into the repository name."
+  }
+}
+
+# The regex ^[a-z0-9-]+$ allows a leading hyphen.  This run documents that
+# so any future tightening of the validation is a conscious choice.
+run "team_currently_accepts_leading_hyphen" {
   command = plan
 
   variables {
     team = "-platform"
   }
 
-  # The regex ^[a-z0-9-]+$ technically allows a leading hyphen; this run
-  # documents the current behaviour so any future tightening of the
-  # validation is a conscious choice.
-  expect_failures = []
-}
-
-run "team_accepts_hyphens_and_numbers" {
-  command = plan
-
-  variables {
-    team = "platform-2"
+  assert {
+    condition     = github_repository.this.name == "-platform-payments-api"
+    error_message = "Leading hyphen in team is currently accepted; update this run if validation is tightened."
   }
-  # Expects success – no expect_failures block.
 }
 
 # ---------------------------------------------------------------------------
 # var.project validation
 # ---------------------------------------------------------------------------
+
+run "project_rejects_empty_string" {
+  command = plan
+
+  variables {
+    project = ""
+  }
+
+  expect_failures = [var.project]
+}
 
 run "project_rejects_uppercase_letters" {
   command = plan
@@ -120,11 +141,16 @@ run "project_rejects_underscores" {
   expect_failures = [var.project]
 }
 
-run "project_accepts_hyphens_and_numbers" {
+run "project_accepts_hyphens_and_digits" {
   command = plan
 
   variables {
     project = "payments-api-v2"
+  }
+
+  assert {
+    condition     = tfe_workspace.main.name == "platform-payments-api-v2-main"
+    error_message = "A valid project containing hyphens and digits must flow into the workspace name."
   }
 }
 
@@ -150,20 +176,4 @@ run "visibility_rejects_arbitrary_string" {
   }
 
   expect_failures = [var.repo_visibility]
-}
-
-run "visibility_accepts_public" {
-  command = plan
-
-  variables {
-    repo_visibility = "public"
-  }
-}
-
-run "visibility_accepts_private" {
-  command = plan
-
-  variables {
-    repo_visibility = "private"
-  }
 }

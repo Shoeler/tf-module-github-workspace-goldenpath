@@ -6,9 +6,22 @@
 #   terraform test
 #
 # Requires Terraform >= 1.7 (mock_provider support).
+#
+# Layout: one run block per resource (or per set of overrides) with every
+# related assertion inside it.  Terraform evaluates all assertions in a run
+# and reports each failure, so grouping loses no diagnostic detail.  Separate
+# run blocks exist only where the input variables differ.
 
 mock_provider "github" {}
 mock_provider "tfe" {}
+
+# Give the project data source a known ID so workspace wiring can be asserted.
+override_data {
+  target = data.tfe_project.this
+  values = {
+    id = "prj-test0000000001"
+  }
+}
 
 # ---------------------------------------------------------------------------
 # Shared variable defaults – every run block can override individual values.
@@ -27,84 +40,55 @@ variables {
 # GitHub repository
 # ---------------------------------------------------------------------------
 
-run "repo_name_is_team_hyphen_project" {
+run "repository_defaults" {
   command = plan
 
   assert {
     condition     = github_repository.this.name == "platform-payments-api"
     error_message = "Repository name must be '{team}-{project}', got: ${github_repository.this.name}"
   }
-}
 
-run "repo_auto_init_is_enabled" {
-  command = plan
+  assert {
+    condition     = github_repository.this.description == "platform / payments-api"
+    error_message = "Default description should be '{team} / {project}', got: ${github_repository.this.description}"
+  }
 
+  assert {
+    condition     = github_repository.this.visibility == "private"
+    error_message = "Default visibility should be 'private'."
+  }
+
+  # auto_init creates the default branch; github_branch.dev and both rulesets
+  # fail at apply time if it is ever turned off.
   assert {
     condition     = github_repository.this.auto_init == true
-    error_message = "auto_init must be true so the default branch exists before branch-protection is applied."
-  }
-}
-
-run "repo_hygiene_defaults" {
-  command = plan
-
-  assert {
-    condition     = github_repository.this.has_issues == true
-    error_message = "has_issues should default to true."
+    error_message = "auto_init must be true so the default branch exists before rulesets are applied."
   }
 
   assert {
-    condition     = github_repository.this.has_wiki == false
-    error_message = "has_wiki should default to false."
+    condition     = github_repository.this.has_issues == true && github_repository.this.has_wiki == false && github_repository.this.has_projects == false
+    error_message = "Repository hygiene defaults changed: expected issues on, wiki off, projects off."
   }
 
-  assert {
-    condition     = github_repository.this.has_projects == false
-    error_message = "has_projects should default to false."
-  }
-
+  # delete_branch_on_merge would try to delete `dev` after a dev -> main PR;
+  # the dev ruleset's deletion rule is what stops that.
   assert {
     condition     = github_repository.this.delete_branch_on_merge == true
     error_message = "delete_branch_on_merge should default to true."
   }
 }
 
-run "repo_visibility_defaults_to_private" {
-  command = plan
-
-  assert {
-    condition     = github_repository.this.visibility == "private"
-    error_message = "Default visibility should be 'private'."
-  }
-}
-
-run "repo_visibility_can_be_overridden" {
+run "repository_overrides" {
   command = plan
 
   variables {
-    repo_visibility = "public"
+    repo_visibility  = "public"
+    repo_description = "The payments API service"
   }
 
   assert {
     condition     = github_repository.this.visibility == "public"
     error_message = "repo_visibility override to 'public' was not applied."
-  }
-}
-
-run "repo_description_falls_back_to_team_project" {
-  command = plan
-
-  assert {
-    condition     = github_repository.this.description == "platform / payments-api"
-    error_message = "Default description should be '{team} / {project}', got: ${github_repository.this.description}"
-  }
-}
-
-run "repo_description_uses_custom_value" {
-  command = plan
-
-  variables {
-    repo_description = "The payments API service"
   }
 
   assert {
@@ -121,288 +105,211 @@ run "dev_branch_is_sourced_from_main" {
   command = plan
 
   assert {
-    condition     = github_branch.dev.branch == "dev"
-    error_message = "dev branch name must be 'dev'."
+    condition     = github_branch.dev.repository == github_repository.this.name
+    error_message = "dev branch must be created in the module's repository."
   }
 
   assert {
-    condition     = github_branch.dev.source_branch == "main"
-    error_message = "dev branch must be sourced from 'main'."
+    condition     = github_branch.dev.branch == "dev" && github_branch.dev.source_branch == "main"
+    error_message = "dev branch must be named 'dev' and sourced from 'main'."
   }
 }
 
 # ---------------------------------------------------------------------------
-# Branch protection – main
+# Branch rulesets
 # ---------------------------------------------------------------------------
 
-run "branch_protection_main_pattern" {
+run "ruleset_main_requires_pr_and_blocks_deletion_and_force_push" {
   command = plan
 
   assert {
-    condition     = github_branch_protection.main.pattern == "main"
-    error_message = "main branch protection pattern must be 'main'."
+    condition     = github_repository_ruleset.main.repository == github_repository.this.name
+    error_message = "main ruleset must apply to the module's repository."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.target == "branch" && github_repository_ruleset.main.enforcement == "active"
+    error_message = "main ruleset must be an active branch ruleset."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.conditions[0].ref_name[0].include == tolist(["refs/heads/main"])
+    error_message = "main ruleset must include only 'refs/heads/main'."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.rules[0].pull_request[0].required_approving_review_count == 1
+    error_message = "main ruleset must require at least 1 approving review."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.rules[0].pull_request[0].dismiss_stale_reviews_on_push == true
+    error_message = "main ruleset must dismiss stale reviews on push."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.rules[0].deletion == true
+    error_message = "main ruleset must block branch deletion."
+  }
+
+  assert {
+    condition     = github_repository_ruleset.main.rules[0].non_fast_forward == true
+    error_message = "main ruleset must block force pushes (non_fast_forward)."
   }
 }
 
-run "branch_protection_main_requires_pr" {
+run "ruleset_dev_requires_pr_and_blocks_deletion_and_force_push" {
   command = plan
 
   assert {
-    condition     = github_branch_protection.main.required_pull_request_reviews[0].required_approving_review_count == 1
-    error_message = "main branch protection must require at least 1 approving review."
+    condition     = github_repository_ruleset.dev.repository == github_repository.this.name
+    error_message = "dev ruleset must apply to the module's repository."
   }
 
   assert {
-    condition     = github_branch_protection.main.required_pull_request_reviews[0].dismiss_stale_reviews == true
-    error_message = "main branch protection must dismiss stale reviews."
-  }
-}
-
-run "branch_protection_main_blocks_force_push_and_deletion" {
-  command = plan
-
-  assert {
-    condition     = github_branch_protection.main.allows_force_pushes == false
-    error_message = "main branch protection must block force pushes."
+    condition     = github_repository_ruleset.dev.target == "branch" && github_repository_ruleset.dev.enforcement == "active"
+    error_message = "dev ruleset must be an active branch ruleset."
   }
 
   assert {
-    condition     = github_branch_protection.main.allows_deletions == false
-    error_message = "main branch protection must block branch deletion."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# Branch protection – dev
-# ---------------------------------------------------------------------------
-
-run "branch_protection_dev_pattern" {
-  command = plan
-
-  assert {
-    condition     = github_branch_protection.dev.pattern == "dev"
-    error_message = "dev branch protection pattern must be 'dev'."
-  }
-}
-
-run "branch_protection_dev_requires_pr" {
-  command = plan
-
-  assert {
-    condition     = github_branch_protection.dev.required_pull_request_reviews[0].required_approving_review_count == 1
-    error_message = "dev branch protection must require at least 1 approving review."
+    condition     = github_repository_ruleset.dev.conditions[0].ref_name[0].include == tolist(["refs/heads/dev"])
+    error_message = "dev ruleset must include only 'refs/heads/dev'."
   }
 
   assert {
-    condition     = github_branch_protection.dev.required_pull_request_reviews[0].dismiss_stale_reviews == true
-    error_message = "dev branch protection must dismiss stale reviews."
-  }
-}
-
-run "branch_protection_dev_blocks_force_push_and_deletion" {
-  command = plan
-
-  assert {
-    condition     = github_branch_protection.dev.allows_force_pushes == false
-    error_message = "dev branch protection must block force pushes."
+    condition     = github_repository_ruleset.dev.rules[0].pull_request[0].required_approving_review_count == 1
+    error_message = "dev ruleset must require at least 1 approving review."
   }
 
   assert {
-    condition     = github_branch_protection.dev.allows_deletions == false
-    error_message = "dev branch protection must block branch deletion."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# HCP Terraform workspace names
-# ---------------------------------------------------------------------------
-
-run "workspace_names_include_team_project_and_env" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.dev.name == "platform-payments-api-dev"
-    error_message = "dev workspace name must be '{team}-{project}-dev', got: ${tfe_workspace.dev.name}"
+    condition     = github_repository_ruleset.dev.rules[0].pull_request[0].dismiss_stale_reviews_on_push == true
+    error_message = "dev ruleset must dismiss stale reviews on push."
   }
 
   assert {
-    condition     = tfe_workspace.main.name == "platform-payments-api-main"
-    error_message = "main workspace name must be '{team}-{project}-main', got: ${tfe_workspace.main.name}"
-  }
-}
-
-run "workspaces_belong_to_correct_organization" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.dev.organization == "acme-hcp"
-    error_message = "dev workspace organization mismatch."
+    condition     = github_repository_ruleset.dev.rules[0].deletion == true
+    error_message = "dev ruleset must block branch deletion."
   }
 
   assert {
-    condition     = tfe_workspace.main.organization == "acme-hcp"
-    error_message = "main workspace organization mismatch."
+    condition     = github_repository_ruleset.dev.rules[0].non_fast_forward == true
+    error_message = "dev ruleset must block force pushes (non_fast_forward)."
   }
 }
 
 # ---------------------------------------------------------------------------
-# HCP Terraform workspace VCS connections
+# HCP Terraform workspaces
 # ---------------------------------------------------------------------------
 
-run "workspace_vcs_dev_targets_dev_branch" {
+run "workspaces_defaults" {
   command = plan
 
   assert {
-    condition     = tfe_workspace.dev.vcs_repo[0].branch == "dev"
-    error_message = "dev workspace must be connected to the 'dev' branch."
+    condition     = tfe_workspace.dev.name == "platform-payments-api-dev" && tfe_workspace.main.name == "platform-payments-api-main"
+    error_message = "Workspace names must be '{team}-{project}-{env}', got: ${tfe_workspace.dev.name}, ${tfe_workspace.main.name}"
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.organization == "acme-hcp" && tfe_workspace.main.organization == "acme-hcp"
+    error_message = "Both workspaces must be created in var.tfe_organization."
+  }
+
+  assert {
+    condition     = data.tfe_project.this.name == "default-project" && data.tfe_project.this.organization == "acme-hcp"
+    error_message = "tfe_project data source must look up var.tfe_project_name in var.tfe_organization."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.project_id == "prj-test0000000001" && tfe_workspace.main.project_id == "prj-test0000000001"
+    error_message = "Both workspaces must be placed in the project resolved by data.tfe_project.this."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.vcs_repo[0].identifier == "acme-corp/platform-payments-api" && tfe_workspace.main.vcs_repo[0].identifier == "acme-corp/platform-payments-api"
+    error_message = "Workspace VCS identifier must be '{github_org}/{team}-{project}'."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.vcs_repo[0].branch == "dev" && tfe_workspace.main.vcs_repo[0].branch == "main"
+    error_message = "dev workspace must track 'dev' and main workspace must track 'main'."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.vcs_repo[0].oauth_token_id == "ot-mocktokenid000000" && tfe_workspace.main.vcs_repo[0].oauth_token_id == "ot-mocktokenid000000"
+    error_message = "Both workspaces must use var.oauth_token_id for the VCS connection."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.tag_names == toset(["team:platform", "project:payments-api"]) && tfe_workspace.main.tag_names == toset(["team:platform", "project:payments-api"])
+    error_message = "Workspace tags must be exactly {team:{team}, project:{project}}."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.auto_apply == false && tfe_workspace.main.auto_apply == false
+    error_message = "auto_apply must default to false on both workspaces."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.working_directory == "/" && tfe_workspace.main.working_directory == "/"
+    error_message = "working_directory must default to '/' on both workspaces."
   }
 }
 
-run "workspace_vcs_main_targets_main_branch" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.main.vcs_repo[0].branch == "main"
-    error_message = "main workspace must be connected to the 'main' branch."
-  }
-}
-
-run "workspace_vcs_identifier_points_to_correct_repo" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.dev.vcs_repo[0].identifier == "acme-corp/platform-payments-api"
-    error_message = "dev workspace VCS identifier must be '{github_org}/{team}-{project}'."
-  }
-
-  assert {
-    condition     = tfe_workspace.main.vcs_repo[0].identifier == "acme-corp/platform-payments-api"
-    error_message = "main workspace VCS identifier must be '{github_org}/{team}-{project}'."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# HCP Terraform workspace tags
-# ---------------------------------------------------------------------------
-
-run "workspace_tags_include_team_and_project" {
-  command = plan
-
-  assert {
-    condition     = contains(tfe_workspace.dev.tag_names, "team:platform")
-    error_message = "dev workspace tags must include 'team:{team}'."
-  }
-
-  assert {
-    condition     = contains(tfe_workspace.dev.tag_names, "project:payments-api")
-    error_message = "dev workspace tags must include 'project:{project}'."
-  }
-
-  assert {
-    condition     = contains(tfe_workspace.main.tag_names, "team:platform")
-    error_message = "main workspace tags must include 'team:{team}'."
-  }
-
-  assert {
-    condition     = contains(tfe_workspace.main.tag_names, "project:payments-api")
-    error_message = "main workspace tags must include 'project:{project}'."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# HCP Terraform project
-# ---------------------------------------------------------------------------
-
-run "workspace_project_name_is_passed_to_data_source" {
-  command = plan
-
-  assert {
-    condition     = data.tfe_project.this.name == "default-project"
-    error_message = "tfe_project data source name must match var.tfe_project_name."
-  }
-}
-
-run "workspace_project_name_can_be_overridden" {
+run "workspaces_overrides" {
   command = plan
 
   variables {
-    tfe_project_name = "my-custom-project"
-  }
-
-  assert {
-    condition     = data.tfe_project.this.name == "my-custom-project"
-    error_message = "tfe_project data source name must reflect the overridden tfe_project_name."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# auto_apply behaviour
-# ---------------------------------------------------------------------------
-
-run "auto_apply_defaults_to_false" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.dev.auto_apply == false
-    error_message = "dev workspace auto_apply must default to false."
-  }
-
-  assert {
-    condition     = tfe_workspace.main.auto_apply == false
-    error_message = "main workspace auto_apply must default to false."
-  }
-}
-
-run "auto_apply_can_be_enabled" {
-  command = plan
-
-  variables {
-    auto_apply = true
-  }
-
-  assert {
-    condition     = tfe_workspace.dev.auto_apply == true
-    error_message = "dev workspace auto_apply should be true when overridden."
-  }
-
-  assert {
-    condition     = tfe_workspace.main.auto_apply == true
-    error_message = "main workspace auto_apply should be true when overridden."
-  }
-}
-
-# ---------------------------------------------------------------------------
-# working_directory propagation
-# ---------------------------------------------------------------------------
-
-run "working_directory_defaults_to_root" {
-  command = plan
-
-  assert {
-    condition     = tfe_workspace.dev.working_directory == "/"
-    error_message = "dev workspace working_directory must default to '/'."
-  }
-
-  assert {
-    condition     = tfe_workspace.main.working_directory == "/"
-    error_message = "main workspace working_directory must default to '/'."
-  }
-}
-
-run "working_directory_can_be_overridden" {
-  command = plan
-
-  variables {
+    github_org                  = "other-org"
+    tfe_project_name            = "my-custom-project"
+    auto_apply                  = true
     terraform_working_directory = "infra/terraform"
   }
 
   assert {
-    condition     = tfe_workspace.dev.working_directory == "infra/terraform"
-    error_message = "dev workspace working_directory override was not applied."
+    condition     = tfe_workspace.dev.vcs_repo[0].identifier == "other-org/platform-payments-api" && tfe_workspace.main.vcs_repo[0].identifier == "other-org/platform-payments-api"
+    error_message = "github_org override must flow into the VCS identifier of both workspaces."
   }
 
   assert {
-    condition     = tfe_workspace.main.working_directory == "infra/terraform"
-    error_message = "main workspace working_directory override was not applied."
+    condition     = data.tfe_project.this.name == "my-custom-project"
+    error_message = "tfe_project_name override must flow into the project lookup."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.auto_apply == true && tfe_workspace.main.auto_apply == true
+    error_message = "auto_apply override must apply to both workspaces."
+  }
+
+  assert {
+    condition     = tfe_workspace.dev.working_directory == "infra/terraform" && tfe_workspace.main.working_directory == "infra/terraform"
+    error_message = "working_directory override must apply to both workspaces."
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Outputs – apply against mocks so computed attributes (IDs, URLs) get values.
+# ---------------------------------------------------------------------------
+
+run "outputs_point_at_the_right_resources" {
+  command = apply
+
+  assert {
+    condition     = output.repo_name == github_repository.this.name
+    error_message = "repo_name output must expose the repository name."
+  }
+
+  assert {
+    condition     = output.repo_html_url == github_repository.this.html_url && output.repo_ssh_clone_url == github_repository.this.ssh_clone_url
+    error_message = "Repository URL outputs must come from github_repository.this."
+  }
+
+  assert {
+    condition     = output.workspace_dev_id == tfe_workspace.dev.id && output.workspace_main_id == tfe_workspace.main.id
+    error_message = "Workspace ID outputs must map dev -> dev and main -> main."
+  }
+
+  assert {
+    condition     = output.workspace_dev_url == tfe_workspace.dev.html_url && output.workspace_main_url == tfe_workspace.main.html_url
+    error_message = "Workspace URL outputs must map dev -> dev and main -> main."
   }
 }

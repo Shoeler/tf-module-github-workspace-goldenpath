@@ -18,9 +18,9 @@ resource "github_repository" "this" {
   auto_init = true
 
   # Sensible repository hygiene defaults.
-  has_issues      = true
-  has_wiki        = false
-  has_projects    = false
+  has_issues             = true
+  has_wiki               = false
+  has_projects           = false
   delete_branch_on_merge = true
 }
 
@@ -55,7 +55,8 @@ resource "github_repository_ruleset" "main" {
   }
 
   rules {
-    deletion = true
+    deletion         = true
+    non_fast_forward = true
 
     pull_request {
       required_approving_review_count = 1
@@ -81,7 +82,8 @@ resource "github_repository_ruleset" "dev" {
   }
 
   rules {
-    deletion = true
+    deletion         = true
+    non_fast_forward = true
 
     pull_request {
       required_approving_review_count = 1
