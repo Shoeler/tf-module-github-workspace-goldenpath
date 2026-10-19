@@ -193,6 +193,8 @@ Workspace-level variables take precedence over Variable Set values if both defin
 | `workspace_main_id` | HCP Terraform workspace ID for the main environment. |
 | `workspace_dev_url` | HCP Terraform UI URL for the dev workspace. |
 | `workspace_main_url` | HCP Terraform UI URL for the main workspace. |
+| `repo_urls` | List of repository URLs: web, SSH clone, HTTPS clone. |
+| `workspace_urls` | List of HCP Terraform UI URLs: main workspace, then dev. |
 
 ---
 
