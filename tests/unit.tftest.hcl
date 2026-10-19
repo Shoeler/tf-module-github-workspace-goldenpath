@@ -312,4 +312,14 @@ run "outputs_point_at_the_right_resources" {
     condition     = output.workspace_dev_url == tfe_workspace.dev.html_url && output.workspace_main_url == tfe_workspace.main.html_url
     error_message = "Workspace URL outputs must map dev -> dev and main -> main."
   }
+
+  assert {
+    condition     = output.repo_urls == [github_repository.this.html_url, github_repository.this.ssh_clone_url, github_repository.this.http_clone_url]
+    error_message = "repo_urls must list web, SSH clone, and HTTPS clone URLs in that order."
+  }
+
+  assert {
+    condition     = output.workspace_urls == [tfe_workspace.main.html_url, tfe_workspace.dev.html_url]
+    error_message = "workspace_urls must list the main workspace URL first, then dev."
+  }
 }
